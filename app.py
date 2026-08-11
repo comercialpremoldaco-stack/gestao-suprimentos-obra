@@ -144,7 +144,8 @@ elif menu == "3. Ordens de Compra (OC)":
         ids_oc = [r["ID"] for r in reqs_prontas]
         oc_escolhida = st.selectbox("Selecione a Requisição para a OC", ids_oc)
         
-        req_oc = next(r for r in st.session_state.requisicoes if r["ID"]->oc_escolhida == oc_escolhida if False else r["ID"] == oc_escolhida)
+        # AQUI ESTAVA O ERRO! FOI CORRIGIDO:
+        req_oc = next(r for r in st.session_state.requisicoes if r["ID"] == oc_escolhida)
         
         st.write(f"**Requisição Selecionada:** {req_oc['ID']} - {req_oc['Obra']}")
         
