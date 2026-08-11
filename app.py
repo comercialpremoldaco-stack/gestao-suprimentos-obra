@@ -11,12 +11,13 @@ st.markdown("---")
 if 'requisicoes' not in st.session_state:
     st.session_state.requisicoes = []
 
-# Menu lateral de navegação expandido
+# Menu lateral de navegação completo
 menu = st.sidebar.selectbox("Menu Principal", [
     "1. Nova Solicitação (Obra)", 
     "2. Cotações (Suprimentos)", 
     "3. Ordens de Compra (OC)",
-    "4. Recebimento e Conferência (Obra)"
+    "4. Recebimento e Conferência (Obra)",
+    "5. Departamento Fiscal e Controle"
 ])
 
 # ----------------------------------------------------
@@ -57,7 +58,8 @@ if menu == "1. Nova Solicitação (Obra)":
                 "Status": "Aguardando Cotação",
                 "Fornecedores": {},
                 "Vencedor": None,
-                "Recebimento": {}
+                "Recebimento": {},
+                "Fiscal": {}
             }
             st.session_state.requisicoes.append(nova_req)
             st.success(f"✅ Solicitação registrada com sucesso! Número: **{num_sequencial}**")
@@ -139,7 +141,6 @@ elif menu == "3. Ordens de Compra (OC)":
 # ----------------------------------------------------
 elif menu == "4. Recebimento e Conferência (Obra)":
     st.header("🚚 Recebimento e Conferência Física em Obra")
-    st.write("Conferência cega entre a OC emitida e os dados da Nota Fiscal recebida no canteiro.")
     
     reqs_oc = [r for r in st.session_state.requisicoes if "OC Emitida" in r["Status"]]
     
@@ -151,26 +152,56 @@ elif menu == "4. Recebimento e Conferência (Obra)":
         
         st.info(f"**Fornecedor Vencedor:** {req_rec['Vencedor']} | **Obra:** {req_rec['Obra']}")
         
-        st.markdown("### Conferência Cega (Portaria / Almoxarifado)")
         with st.form("form_recebimento"):
             nf_numero = st.text_input("Número da Nota Fiscal (NF)")
             nf_valor = st.number_input("Valor Total da NF (R$)", min_value=0.0)
             
             st.markdown("**Checklist de Verificação Obrigatória:**")
             check_qtde = st.checkbox(" Quantidades conferidas fisicamente no canteiro batem com a OC?")
-            check_especif = st.checkbox(" Especificações, unidades e diâmetros corretos?")
+            check_especif = st.checkbox(" Especificações e unidades corretas?")
             check_preco = st.checkbox(" Preço unitário e total idêntico ao negociado na OC?")
             
-            upload_nf = st.file_uploader("Upload da Nota Fiscal Digitalizada (PDF ou Imagem)", type=["pdf", "png", "jpg", "jpeg"])
+            upload_nf = st.file_uploader("Upload da Nota Fiscal Digitalizada", type=["pdf", "png", "jpg", "jpeg"])
             
-            concluir_recebimento = st.form_submit_button("Aprovar Recebimento e Enviar ao Controle")
-            
-            if concluir_recebimento:
+            if st.form_submit_button("Aprovar Recebimento e Enviar ao Controle"):
                 if not check_qtde or not check_especif or not check_preco:
-                    st.error("❌ ERRO DE COMPLIANCE: Nenhum produto/serviço pode ser aceito com divergência em relação à OC! Verifique os itens.")
+                    st.error("❌ ERRO: Divergência com a OC! O recebimento não pode ser aprovado.")
                 elif not nf_numero:
                     st.error("Informe o número da Nota Fiscal.")
                 else:
                     req_rec["Status"] = "Concluído - NF Enviada ao Controle"
                     req_rec["Recebimento"] = {"NF": nf_numero, "Valor": nf_valor}
-                    st.success("✅ Recebimento aprovado com sucesso! A Nota Fiscal digitalizada foi encaminhada ao Departamento de Controle.")
+                    st.success("✅ Recebimento aprovado! Encaminhado ao Departamento Fiscal e Controle.")
+
+# ----------------------------------------------------
+# ETAPA 5: DEPARTAMENTO FISCAL E CONTROLE
+# ----------------------------------------------------
+elif menu == "5. Departamento Fiscal e Controle":
+    st.header("⚖️ Departamento Fiscal, Compliance e Liberação")
+    st.write("Validação final da Nota Fiscal, checagem Sefaz, CNDs e autorização de pagamento.")
+    
+    reqs_fiscal = [r for r in st.session_state.requisicoes if r["Status"] == "Concluído - NF Enviada ao Controle"]
+    
+    if not reqs_fiscal:
+        st.warning("⚠️ Nenhuma Nota Fiscal aguardando validação fiscal no momento.")
+    else:
+        id_ fisc = st.selectbox("Selecione a Requisição para Análise Fiscal", [r["ID"] for r in reqs_fiscal])
+        req_f = next(r for r in st.session_state.requisicoes if r["ID"] == id_fisc)
+        
+        st.info(f"**Requisição:** {req_f['ID']} | **Fornecedor:** {req_f['Vencedor']} | **NF:** {req_f['Recebimento'].get('NF')} | **Valor:** R$ {req_f['Recebimento'].get('Valor'):.2f}")
+        
+        with st.form("form_fiscal"):
+            st.markdown("### 🔍 Checklist de Conformidade Fiscal")
+            chk_sefaz = st.checkbox(" Nota Fiscal válida e autorizada na Sefaz (Sem cancelamento)")
+            chk_cnd = st.checkbox(" CNDs do Fornecedor regulares (Federal, Trabalhista, FGTS)")
+            chk_impostos = st.checkbox(" Retenções de impostos conferidas (IRRF, INSS, ISS se aplicável)")
+            
+            observacao_fiscal = st.text_area("Observações do Fiscal / Contábil", placeholder="Ex: Tudo em ordem, liberado para programação financeira.")
+            
+            if st.form_submit_button("Aprovar e Liberar para Pagamento"):
+                if not chk_sefaz or not chk_cnd or not chk_impostos:
+                    st.error("❌ ERRO DE COMPLIANCE: Todas as validações fiscais (Sefaz, CNDs e Impostos) são obrigatórias para liberação!")
+                else:
+                    req_f["Status"] = "Finalizado - Pago / Contabilizado"
+                    req_f["Fiscal"] = {"Aprovado_Por": "Setor Fiscal", "Data": str(datetime.date.today())}
+                    st.success("🎉 Processo concluído com sucesso! Nota Fiscal validada e integrada ao financeiro da obra.")
