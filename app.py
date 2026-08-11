@@ -11,13 +11,14 @@ st.markdown("---")
 if 'requisicoes' not in st.session_state:
     st.session_state.requisicoes = []
 
-# Menu lateral de navegação completo
+# Menu lateral de navegação com o novo Portal do Cliente
 menu = st.sidebar.selectbox("Menu Principal", [
     "1. Nova Solicitação (Obra)", 
     "2. Cotações (Suprimentos)", 
-    "3. Ordens de Compra (OC)",
-    "4. Recebimento e Conferência (Obra)",
-    "5. Departamento Fiscal e Controle"
+    "3. Aprovação do Cliente",
+    "4. Emissão de Ordem de Compra (OC)",
+    "5. Recebimento e Conferência (Obra)",
+    "6. Departamento Fiscal e Controle"
 ])
 
 # ----------------------------------------------------
@@ -57,7 +58,7 @@ if menu == "1. Nova Solicitação (Obra)":
                 "Itens": df_editado.to_dict('records'),
                 "Status": "Aguardando Cotação",
                 "Fornecedores": {},
-                "Vencedor": None,
+                "Cliente_Aprovacao": {},
                 "Recebimento": {},
                 "Fiscal": {}
             }
@@ -68,7 +69,7 @@ if menu == "1. Nova Solicitação (Obra)":
 # ETAPA 2: COTAÇÃO (SUPRIMENTOS)
 # ----------------------------------------------------
 elif menu == "2. Cotações (Suprimentos)":
-    st.header("📊 Painel de Cotações (3 Fornecedores)")
+    st.header("📊 Painel de Cotações (3 Fornecedores Obrigatórios)")
     
     if not st.session_state.requisicoes:
         st.warning("⚠️ Nenhuma solicitação cadastrada.")
@@ -95,59 +96,95 @@ elif menu == "2. Cotações (Suprimentos)":
                 f3_total = st.number_input("Total F3 (R$)", value=330.00)
                 f3_pgto = st.text_input("Pgto F3", value="Pix")
             
-            if st.form_submit_button("Salvar Cotações"):
-                req_atual["Status"] = "Aguardando Aprovação Cliente"
+            if st.form_submit_button("Salvar Cotações e Enviar para o Cliente"):
+                req_atual["Status"] = "Aguardando Aprovação do Cliente"
                 req_atual["Fornecedores"] = {
                     "F1": {"nome": f1_nome, "total": f1_total, "pgto": f1_pgto},
                     "F2": {"nome": f2_nome, "total": f2_total, "pgto": f2_pgto},
                     "F3": {"nome": f3_nome, "total": f3_total, "pgto": f3_pgto},
                 }
-                st.success("✅ Cotações salvas com sucesso!")
+                st.success("✅ Cotações salvas! Encaminhado para o Portal de Aprovação do Cliente.")
 
 # ----------------------------------------------------
-# ETAPA 3: ORDENS DE COMPRA (OC)
+# ETAPA 3: APROVAÇÃO DO CLIENTE (PORTAL DO CLIENTE)
 # ----------------------------------------------------
-elif menu == "3. Ordens de Compra (OC)":
-    st.header("🛒 Emissão de Ordem de Compra (OC)")
+elif menu == "3. Aprovação do Cliente":
+    st.header("👑 Portal de Aprovação do Cliente")
+    st.write("Área exclusiva onde o cliente revisa as propostas e autoriza a aquisição.")
     
-    reqs_prontas = [r for r in st.session_state.requisicoes if r["Status"] != "Aguardando Cotação"]
+    reqs_cliente = [r for r in st.session_state.requisicoes if r["Status"] == "Aguardando Aprovação do Cliente"]
     
-    if not reqs_prontas:
-        st.warning("⚠️ Nenhuma requisição pronta para OC.")
+    if not reqs_cliente:
+        st.warning("⚠️ Nenhuma requisição pendente de aprovação do cliente no momento.")
     else:
-        oc_escolhida = st.selectbox("Selecione a Requisição", [r["ID"] for r in reqs_prontas])
-        req_oc = next(r for r in st.session_state.requisicoes if r["ID"] == oc_escolhida)
+        id_cli = st.selectbox("Selecione a Requisição para Análise", [r["ID"] for r in reqs_cliente])
+        req_c = next(r for r in st.session_state.requisicoes if r["ID"] == id_cli)
         
-        if req_oc["Fornecedores"]:
-            f_dados = req_oc["Fornecedores"]
-            df_comp = pd.DataFrame([
-                {"Fornecedor": f_dados['F1']['nome'], "Total": f_dados['F1']['total'], "Pgto": f_dados['F1']['pgto']},
-                {"Fornecedor": f_dados['F2']['nome'], "Total": f_dados['F2']['total'], "Pgto": f_dados['F2']['pgto']},
-                {"Fornecedor": f_dados['F3']['nome'], "Total": f_dados['F3']['total'], "Pgto": f_dados['F3']['pgto']},
+        st.info(f"**Obra:** {req_c['Obra']} | **Solicitante:** {req_c['Solicitante']}")
+        st.dataframe(pd.DataFrame(req_c['Itens']), use_container_width=True)
+        
+        if req_c["Fornecedores"]:
+            f_dados = req_c["Fornecedores"]
+            df_comparativo = pd.DataFrame([
+                {"Fornecedor": f_dados['F1']['nome'], "Valor Total (R$)": f_dados['F1']['total'], "Condição de Pagamento": f_dados['F1']['pgto']},
+                {"Fornecedor": f_dados['F2']['nome'], "Valor Total (R$)": f_dados['F2']['total'], "Condição de Pagamento": f_dados['F2']['pgto']},
+                {"Fornecedor": f_dados['F3']['nome'], "Valor Total (R$)": f_dados['F3']['total'], "Condição de Pagamento": f_dados['F3']['pgto']},
             ])
-            st.dataframe(df_comp, use_container_width=True)
+            st.markdown("### 📊 Mapa Comparativo de Propostas")
+            st.dataframe(df_comparativo, use_container_width=True)
             
-            vencedor = st.selectbox("Fornecedor Aprovado", [f_dados['F1']['nome'], f_dados['F2']['nome'], f_dados['F3']['nome']])
-            
-            if st.button("Emitir Ordem de Compra Oficial"):
-                req_oc["Status"] = "OC Emitida - Aguardando Entrega"
-                req_oc["Vencedor"] = vencedor
-                st.success(f"🎉 OC emitida para **{vencedor}**! Liberada para entrega em obra.")
+            with st.form("form_aprovacao_cliente"):
+                fornecedor_escolhido = st.selectbox("Indique o Fornecedor Aprovado:", [f_dados['F1']['nome'], f_dados['F2']['nome'], f_dados['F3']['nome']])
+                comentario_cliente = st.text_area("Observações / Diretrizes do Cliente", placeholder="Ex: Aprovado conforme menor preço.")
+                
+                autorizar = st.form_submit_button("✅ Aprovar e Liberar para Emissão de OC", type="primary")
+                
+                if autorizar:
+                    req_c["Status"] = "Aprovado pelo Cliente - Aguardando OC"
+                    req_c["Cliente_Aprovacao"] = {
+                        "Fornecedor_Indicado": fornecedor_escolhido,
+                        "Comentario": comentario_cliente,
+                        "Data": str(datetime.date.today())
+                    }
+                    st.success(f"🎉 Compra aprovada com sucesso para **{fornecedor_escolhido}**! O departamento de suprimentos já pode emitir a Ordem de Compra.")
         else:
-            st.info("Cotações pendentes.")
+            st.info("As cotações para esta requisição ainda não foram finalizadas pelo suprimentos.")
 
 # ----------------------------------------------------
-# ETAPA 4: RECEBIMENTO E CONFERÊNCIA EM OBRA
+# ETAPA 4: EMISSÃO DE ORDEM DE COMPRA (OC)
 # ----------------------------------------------------
-elif menu == "4. Recebimento e Conferência (Obra)":
-    st.header("🚚 Recebimento e Conferência Física em Obra")
+elif menu == "4. Emissão de Ordem de Compra (OC)":
+    st.header("🛒 Emissão de Ordem de Compra (OC)")
+    st.write("Fechamento da aquisição e emissão da OC baseada na indicação do cliente.")
     
-    reqs_oc = [r for r in st.session_state.requisicoes if "OC Emitida" in r["Status"]]
+    reqs_oc = [r for r in st.session_state.requisicoes if r["Status"] == "Aprovado pelo Cliente - Aguardando OC"]
     
     if not reqs_oc:
+        st.warning("⚠️ Nenhuma requisição aprovada pelo cliente aguardando emissão de OC.")
+    else:
+        oc_escolhida = st.selectbox("Selecione a Requisição Aprovada", [r["ID"] for r in reqs_oc])
+        req_oc = next(r for r in st.session_state.requisicoes if r["ID"] == oc_escolhida)
+        
+        indicacao = req_oc["Cliente_Aprovacao"].get("Fornecedor_Indicado")
+        st.info(f"**Fornecedor Indicado pelo Cliente:** {indicacao}")
+        
+        if st.button("Emitir Ordem de Compra Oficial (OC)", type="primary"):
+            req_oc["Status"] = "OC Emitida - Aguardando Entrega"
+            req_oc["Vencedor"] = indicacao
+            st.success(f"🎉 Ordem de Compra oficial gerada e enviada para o fornecedor **{indicacao}**, solicitante e controle!")
+
+# ----------------------------------------------------
+# ETAPA 5: RECEBIMENTO E CONFERÊNCIA EM OBRA
+# ----------------------------------------------------
+elif menu == "5. Recebimento e Conferência (Obra)":
+    st.header("🚚 Recebimento e Conferência Física em Obra")
+    
+    reqs_rec = [r for r in st.session_state.requisicoes if "OC Emitida" in r["Status"]]
+    
+    if not reqs_rec:
         st.warning("⚠️ Nenhuma OC emitida aguardando recebimento na obra.")
     else:
-        id_rec = st.selectbox("Selecione a OC para Conferência", [r["ID"] for r in reqs_oc])
+        id_rec = st.selectbox("Selecione a OC para Conferência", [r["ID"] for r in reqs_rec])
         req_rec = next(r for r in st.session_state.requisicoes if r["ID"] == id_rec)
         
         st.info(f"**Fornecedor Vencedor:** {req_rec['Vencedor']} | **Obra:** {req_rec['Obra']}")
@@ -157,7 +194,7 @@ elif menu == "4. Recebimento e Conferência (Obra)":
             nf_valor = st.number_input("Valor Total da NF (R$)", min_value=0.0)
             
             st.markdown("**Checklist de Verificação Obrigatória:**")
-            check_qtde = st.checkbox(" Quantidades conferidas fisicamente no canteiro batem com a OC?")
+            check_qtde = st.checkbox(" Quantidades conferidas fisicamente batem com a OC?")
             check_especif = st.checkbox(" Especificações e unidades corretas?")
             check_preco = st.checkbox(" Preço unitário e total idêntico ao negociado na OC?")
             
@@ -165,43 +202,38 @@ elif menu == "4. Recebimento e Conferência (Obra)":
             
             if st.form_submit_button("Aprovar Recebimento e Enviar ao Controle"):
                 if not check_qtde or not check_especif or not check_preco:
-                    st.error("❌ ERRO: Divergência com a OC! O recebimento não pode ser aprovado.")
+                    st.error("❌ ERRO: Divergência com a OC! Nenhum produto/serviço pode ser recebido.")
                 elif not nf_numero:
                     st.error("Informe o número da Nota Fiscal.")
                 else:
                     req_rec["Status"] = "Concluído - NF Enviada ao Controle"
                     req_rec["Recebimento"] = {"NF": nf_numero, "Valor": nf_valor}
-                    st.success("✅ Recebimento aprovado! Encaminhado ao Departamento Fiscal e Controle.")
+                    st.success("✅ Recebimento aprovado! Encaminhado ao Departamento Fiscal.")
 
 # ----------------------------------------------------
-# ETAPA 5: DEPARTAMENTO FISCAL E CONTROLE
+# ETAPA 6: DEPARTAMENTO FISCAL E CONTROLE
 # ----------------------------------------------------
-elif menu == "5. Departamento Fiscal e Controle":
+elif menu == "6. Departamento Fiscal e Controle":
     st.header("⚖️ Departamento Fiscal, Compliance e Liberação")
-    st.write("Validação final da Nota Fiscal, checagem Sefaz, CNDs e autorização de pagamento.")
     
     reqs_fiscal = [r for r in st.session_state.requisicoes if r["Status"] == "Concluído - NF Enviada ao Controle"]
     
     if not reqs_fiscal:
-        st.warning("⚠️ Nenhuma Nota Fiscal aguardando validação fiscal no momento.")
+        st.warning("⚠️ Nenhuma Nota Fiscal aguardando validação fiscal.")
     else:
-        id_ fisc = st.selectbox("Selecione a Requisição para Análise Fiscal", [r["ID"] for r in reqs_fiscal])
+        id_fisc = st.selectbox("Selecione a Requisição para Análise Fiscal", [r["ID"] for r in reqs_fiscal])
         req_f = next(r for r in st.session_state.requisicoes if r["ID"] == id_fisc)
         
-        st.info(f"**Requisição:** {req_f['ID']} | **Fornecedor:** {req_f['Vencedor']} | **NF:** {req_f['Recebimento'].get('NF')} | **Valor:** R$ {req_f['Recebimento'].get('Valor'):.2f}")
+        st.info(f"**Requisição:** {req_f['ID']} | **Fornecedor:** {req_f['Vencedor']} | **NF:** {req_f['Recebimento'].get('NF')}")
         
         with st.form("form_fiscal"):
-            st.markdown("### 🔍 Checklist de Conformidade Fiscal")
-            chk_sefaz = st.checkbox(" Nota Fiscal válida e autorizada na Sefaz (Sem cancelamento)")
-            chk_cnd = st.checkbox(" CNDs do Fornecedor regulares (Federal, Trabalhista, FGTS)")
-            chk_impostos = st.checkbox(" Retenções de impostos conferidas (IRRF, INSS, ISS se aplicável)")
-            
-            observacao_fiscal = st.text_area("Observações do Fiscal / Contábil", placeholder="Ex: Tudo em ordem, liberado para programação financeira.")
+            chk_sefaz = st.checkbox(" Nota Fiscal válida e autorizada na Sefaz")
+            chk_cnd = st.checkbox(" CNDs do Fornecedor regulares")
+            chk_impostos = st.checkbox(" Retenções de impostos conferidas")
             
             if st.form_submit_button("Aprovar e Liberar para Pagamento"):
                 if not chk_sefaz or not chk_cnd or not chk_impostos:
-                    st.error("❌ ERRO DE COMPLIANCE: Todas as validações fiscais (Sefaz, CNDs e Impostos) são obrigatórias para liberação!")
+                    st.error("❌ ERRO: Validações fiscais obrigatórias pendentes!")
                 else:
                     req_f["Status"] = "Finalizado - Pago / Contabilizado"
-                    req_f["Fiscal"] = {"Aprovado_Por": "Setor Fiscal", "Data": str(datetime.date.today())}
-                    st.success("🎉 Processo concluído com sucesso! Nota Fiscal validada e integrada ao financeiro da obra.")
+                    st.success("🎉 Processo concluído com sucesso! Nota Fiscal validada e integrada.")
